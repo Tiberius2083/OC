@@ -130,10 +130,18 @@ def pluralize_class(class_name):
     return mapping.get(class_name, class_name + "e")
 
 
-def get_molecules_by_classes(selected_plural_classes):
+@st.cache_data
+def load_excel_data():
     if not os.path.exists(EXCEL_PATH):
+        return pd.DataFrame()
+    return pd.read_excel(EXCEL_PATH)
+
+
+def get_molecules_by_classes(selected_plural_classes):
+    df = load_excel_data()
+    if df.empty:
         return []
-    df = pd.read_excel(EXCEL_PATH)
+
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
@@ -185,7 +193,7 @@ def get_molecules_by_classes(selected_plural_classes):
     return final_pool
 
 
-def mol_to_bytes(smiles, size=(400, 250)):
+def mol_to_bytes(smiles, size=(300, 180)):
     mol = Chem.MolFromSmiles(smiles)
     if mol:
         img = Draw.MolToImage(mol, size=size)
@@ -225,8 +233,9 @@ if st.session_state.page == "menu":
     st.write("---")
     st.subheader("Wähle deine Verbindungsklassen & Modus")
 
-    df = pd.read_excel(EXCEL_PATH) if os.path.exists(EXCEL_PATH) else pd.DataFrame()
-    raw_classes = df["Verbindungsklasse"].dropna().unique().tolist() if "Verbindungsklasse" in df.columns else []
+    df = load_excel_data()
+    raw_classes = df[
+        "Verbindungsklasse"].dropna().unique().tolist() if not df.empty and "Verbindungsklasse" in df.columns else []
     available_classes = sorted(list(set([pluralize_class(c) for c in raw_classes])))
 
     col1, col2 = st.columns(2)
@@ -295,7 +304,7 @@ elif st.session_state.page == "stats":
         ORDER BY (CAST(wrong_count AS FLOAT) / (correct_count + wrong_count)) DESC LIMIT 5
     """)
     prob_rows = cursor.fetchall()
-    df_excel = pd.read_excel(EXCEL_PATH) if os.path.exists(EXCEL_PATH) else pd.DataFrame()
+    df_excel = load_excel_data()
     if prob_rows:
         for pr in prob_rows:
             m_data = df_excel[df_excel['ID'].astype(str) == str(pr[0])]
@@ -346,14 +355,12 @@ elif st.session_state.page == "quiz":
         mode = st.session_state.mode
         st.write(f"**Frage {idx + 1} von {len(mols)}** | Klasse: {current_mol['class']}")
 
-        # Stabile Daten pro Frage cachen
         if "quiz_question_idx" not in st.session_state or st.session_state.quiz_question_idx != idx:
             st.session_state.quiz_question_idx = idx
             st.session_state.checked = False
             st.session_state.user_tile_guess = []
 
-            # Distraktoren generieren
-            df_all = pd.read_excel(EXCEL_PATH) if os.path.exists(EXCEL_PATH) else pd.DataFrame()
+            df_all = load_excel_data()
             all_pool = []
             for _, r in df_all.iterrows():
                 if not pd.isna(r.get("Primärname")) and not pd.isna(r.get("SMILES")):
@@ -372,7 +379,6 @@ elif st.session_state.page == "quiz":
             random.shuffle(choices)
             st.session_state.current_choices = choices
 
-            # Kachel-Pool für schweren Modus vorbereiten
             target_word = current_mol['name']
             letters = [c.upper() for c in target_word if c.isalpha()]
             alphabet = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -392,7 +398,7 @@ elif st.session_state.page == "quiz":
 
             cols = st.columns(2)
             for i, choice_mol in enumerate(choices):
-                img_bytes = mol_to_bytes(choice_mol['smiles'], size=(250, 150))
+                img_bytes = mol_to_bytes(choice_mol['smiles'], size=(220, 140))
                 with cols[i % 2]:
                     if img_bytes:
                         st.image(img_bytes, caption=f"Option {i + 1}")
@@ -406,7 +412,7 @@ elif st.session_state.page == "quiz":
 
         # 2. Modus: Strukturformel -> Name
         elif mode == "Auswahl-Modus (Strukturformel -> Name)":
-            img_bytes = mol_to_bytes(target_smiles, size=(400, 250))
+            img_bytes = mol_to_bytes(target_smiles, size=(350, 220))
             if img_bytes:
                 st.image(img_bytes, caption="Strukturformel")
 
@@ -422,13 +428,12 @@ elif st.session_state.page == "quiz":
 
         # 3. Modus: Schwerer Kachel-Modus (ganzes Wort)
         elif mode == "Schwerer Kachel-Modus (ganzes Wort)":
-            img_bytes = mol_to_bytes(target_smiles, size=(400, 250))
+            img_bytes = mol_to_bytes(target_smiles, size=(350, 220))
             if img_bytes:
                 st.image(img_bytes, caption="Strukturformel")
 
             letters_only = "".join([c.upper() for c in target_name if c.isalpha()])
 
-            # Anzeige des aktuellen Ratespiels
             display_str = ""
             l_idx = 0
             guessed = st.session_state.user_tile_guess
@@ -469,7 +474,7 @@ elif st.session_state.page == "quiz":
 
         # 4. Modus: Tastatur-Modus (freies Tippen)
         elif mode == "Tastatur-Modus (freies Tippen)":
-            img_bytes = mol_to_bytes(target_smiles, size=(400, 250))
+            img_bytes = mol_to_bytes(target_smiles, size=(350, 220))
             if img_bytes:
                 st.image(img_bytes, caption="Strukturformel")
 
