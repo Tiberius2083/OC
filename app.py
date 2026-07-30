@@ -120,6 +120,11 @@ if st.session_state.page == "menu":
                 st.session_state.mode = mode
                 st.session_state.page = "quiz"
                 st.session_state.checked = False
+                # Alte Frage-Caches löschen
+                if "current_choices" in st.session_state:
+                    del st.session_state.current_choices
+                if "current_choice_list" in st.session_state:
+                    del st.session_state.current_choice_list
                 st.rerun()
 
 # --- QUIZ-SEITE ---
@@ -127,6 +132,10 @@ elif st.session_state.page == "quiz":
     if st.button("Zurück zum Hauptmenü"):
         st.session_state.page = "menu"
         st.session_state.checked = False
+        if "current_choices" in st.session_state:
+            del st.session_state.current_choices
+        if "current_choice_list" in st.session_state:
+            del st.session_state.current_choice_list
         st.rerun()
 
     mols = st.session_state.quiz_mols
@@ -141,12 +150,26 @@ elif st.session_state.page == "quiz":
             st.session_state.correct_count = 0
             st.session_state.wrong_count = 0
             st.session_state.checked = False
+            if "current_choices" in st.session_state:
+                del st.session_state.current_choices
+            if "current_choice_list" in st.session_state:
+                del st.session_state.current_choice_list
             st.rerun()
     else:
         current_mol = mols[idx]
         mode = st.session_state.mode
 
-        st.write(f"**Frage {idx + 1} von {len(mols)}**")
+        st.write(
+            f"**Frage {idx + 1} von {len(mols)}** (Richtig: {st.session_state.correct_count} | Falsch: {st.session_state.wrong_count})")
+
+        # Sicherstellen, dass für die aktuelle Frage stabile Antwortmöglichkeiten generiert werden
+        if "last_question_idx" not in st.session_state or st.session_state.last_question_idx != idx:
+            st.session_state.last_question_idx = idx
+            st.session_state.checked = False
+            if "current_choices" in st.session_state:
+                del st.session_state.current_choices
+            if "current_choice_list" in st.session_state:
+                del st.session_state.current_choice_list
 
         # 1. Modus: Strukturformel -> Name (Multiple Choice)
         if mode == "Strukturformel -> Name (Multiple Choice)":
@@ -156,11 +179,16 @@ elif st.session_state.page == "quiz":
                 st.image(img, caption="Strukturformel")
 
             target_name = current_mol['name']
-            all_names = df['Primärname'].dropna().unique().tolist()
-            distractors = [n for n in all_names if n != target_name]
-            choices = random.sample(distractors, min(3, len(distractors))) + [target_name]
-            random.shuffle(choices)
 
+            # Auswahlmöglichkeiten einmalig für diese Frage cachen
+            if "current_choices" not in st.session_state:
+                all_names = df['Primärname'].dropna().unique().tolist()
+                distractors = [n for n in all_names if n != target_name]
+                choices = random.sample(distractors, min(3, len(distractors))) + [target_name]
+                random.shuffle(choices)
+                st.session_state.current_choices = choices
+
+            choices = st.session_state.current_choices
             choice = st.radio("Welcher Name passt zum Molekül?", choices, key=f"radio_{idx}")
 
             if not st.session_state.checked:
@@ -178,11 +206,13 @@ elif st.session_state.page == "quiz":
                 if st.session_state.is_last_correct:
                     st.success("Richtig!")
                 else:
-                    st.error(f"Falsch! Richtig wäre: **{st.session_state.target_name}**")
+                    st.error(f"Falsch! Richtig wäre: **{target_name}**")
 
                 if st.button("Nächstes Molekül"):
                     st.session_state.curr_idx += 1
                     st.session_state.checked = False
+                    if "current_choices" in st.session_state:
+                        del st.session_state.current_choices
                     st.rerun()
 
         # 2. Modus: Strukturformel -> Name (Freies Tippen)
@@ -210,7 +240,7 @@ elif st.session_state.page == "quiz":
                 if st.session_state.is_last_correct:
                     st.success("Richtig!")
                 else:
-                    st.error(f"Falsch! Richtig wäre: **{st.session_state.target_name}**")
+                    st.error(f"Falsch! Richtig wäre: **{target_name}**")
 
                 if st.button("Nächstes Molekül"):
                     st.session_state.curr_idx += 1
@@ -222,11 +252,16 @@ elif st.session_state.page == "quiz":
             st.write(f"Gesucht ist die Strukturformel zu: **{current_mol['name']}**")
 
             target_smiles = current_mol['smiles']
-            other_mols = [m for m in mols if m['smiles'] != target_smiles]
-            distractor_mols = random.sample(other_mols, min(3, len(other_mols))) if other_mols else []
-            choice_list = distractor_mols + [current_mol]
-            random.shuffle(choice_list)
 
+            # Strukturformel-Optionen einmalig für diese Frage cachen
+            if "current_choice_list" not in st.session_state:
+                other_mols = [m for m in mols if m['smiles'] != target_smiles]
+                distractor_mols = random.sample(other_mols, min(3, len(other_mols))) if other_mols else []
+                choice_list = distractor_mols + [current_mol]
+                random.shuffle(choice_list)
+                st.session_state.current_choice_list = choice_list
+
+            choice_list = st.session_state.current_choice_list
             choice_options = [Chem.MolFromSmiles(m['smiles']) for m in choice_list]
 
             cols = st.columns(2)
@@ -259,6 +294,8 @@ elif st.session_state.page == "quiz":
                 if st.button("Nächstes Molekül"):
                     st.session_state.curr_idx += 1
                     st.session_state.checked = False
+                    if "current_choice_list" in st.session_state:
+                        del st.session_state.current_choice_list
                     st.rerun()
 
         # 4. Modus: Klassen-Zuordnung (Strukturformel -> Klasse)
@@ -269,12 +306,16 @@ elif st.session_state.page == "quiz":
                 st.image(img, caption="Strukturformel")
 
             target_class = current_mol['class']
-            raw_classes = df["Verbindungsklasse"].dropna().unique().tolist()
-            all_classes = sorted(list(set([pluralize(c) for c in raw_classes])))
-            distractors = [c for c in all_classes if c != target_class]
-            choices = random.sample(distractors, min(3, len(distractors))) + [target_class]
-            random.shuffle(choices)
 
+            if "current_choices" not in st.session_state:
+                raw_classes = df["Verbindungsklasse"].dropna().unique().tolist()
+                all_classes = sorted(list(set([pluralize(c) for c in raw_classes])))
+                distractors = [c for c in all_classes if c != target_class]
+                choices = random.sample(distractors, min(3, len(distractors))) + [target_class]
+                random.shuffle(choices)
+                st.session_state.current_choices = choices
+
+            choices = st.session_state.current_choices
             choice = st.radio("Zu welcher Verbindungsklasse gehört dieses Molekül?", choices, key=f"radio_cls_{idx}")
 
             if not st.session_state.checked:
@@ -292,11 +333,13 @@ elif st.session_state.page == "quiz":
                 if st.session_state.is_last_correct:
                     st.success("Richtig!")
                 else:
-                    st.error(f"Falsch! Richtig wäre: **{st.session_state.target_class}**")
+                    st.error(f"Falsch! Richtig wäre: **{target_class}**")
 
                 if st.button("Nächstes Molekül"):
                     st.session_state.curr_idx += 1
                     st.session_state.checked = False
+                    if "current_choices" in st.session_state:
+                        del st.session_state.current_choices
                     st.rerun()
 
         # 5. Modus: Freies Tippen mit Formel & Klasse
@@ -326,7 +369,7 @@ elif st.session_state.page == "quiz":
                 if st.session_state.is_last_correct:
                     st.success("Richtig!")
                 else:
-                    st.error(f"Falsch! Richtig wäre: **{st.session_state.target_name}**")
+                    st.error(f"Falsch! Richtig wäre: **{target_name}**")
 
                 if st.button("Nächstes Molekül"):
                     st.session_state.curr_idx += 1
