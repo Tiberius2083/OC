@@ -40,7 +40,7 @@ def pluralize(cls):
 
 
 # --- STREAMLIT BENUTZEROBERFLÄCHE ---
-st.set_page_config(page_title="OC Lernapp", page_icon="🧪", layout="centered")
+st.set_page_config(page_title="OC Lernapp", layout="centered")
 
 df = load_excel()
 if df is None:
@@ -61,7 +61,7 @@ if "wrong_count" not in st.session_state:
 
 # --- HAUPTMENÜ ---
 if st.session_state.page == "menu":
-    st.title("🧪 Organische Chemie – Lernapp")
+    st.title("Organische Chemie – Lernapp")
     st.subheader("Wähle deine Verbindungsklassen")
 
     raw_classes = df["Verbindungsklasse"].dropna().unique().tolist()
@@ -91,7 +91,6 @@ if st.session_state.page == "menu":
         if not selected_classes:
             st.warning("Bitte wähle mindestens eine Verbindungsklasse aus!")
         else:
-            # Moleküle filtern
             mols = []
             for _, row in df.iterrows():
                 rc = row.get("Verbindungsklasse")
@@ -119,7 +118,7 @@ if st.session_state.page == "menu":
 
 # --- QUIZ-SEITE ---
 elif st.session_state.page == "quiz":
-    if st.button("← Zurück zum Hauptmenü"):
+    if st.button("Zurück zum Hauptmenü"):
         st.session_state.page = "menu"
         st.rerun()
 
@@ -127,7 +126,7 @@ elif st.session_state.page == "quiz":
     idx = st.session_state.curr_idx
 
     if idx >= len(mols):
-        st.success("🎉 Du hast alle Moleküle dieser Runde durchgearbeitet!")
+        st.success("Du hast alle Moleküle dieser Runde durchgearbeitet!")
         st.write(
             f"**Statistik dieser Sitzung:** Richtig: {st.session_state.correct_count} | Falsch: {st.session_state.wrong_count}")
         if st.button("Nochmal von vorne starten"):
@@ -140,7 +139,6 @@ elif st.session_state.page == "quiz":
         current_mol = mols[idx]
         st.write(f"**Frage {idx + 1} von {len(mols)}** | Klasse: `{current_mol['class']}`")
 
-        # Molekül anzeigen
         mol = Chem.MolFromSmiles(current_mol['smiles'])
         if mol:
             img = Draw.MolToImage(mol, size=(400, 250))
@@ -148,22 +146,20 @@ elif st.session_state.page == "quiz":
 
         target_name = current_mol['name']
 
-        # Antwort prüfen Logik
         if "freies Tippen" in st.session_state.mode:
             user_input = st.text_input("Gib den Namen des Moleküls ein:", key=f"input_{idx}")
             if st.button("Antwort prüfen", key=f"btn_{idx}"):
                 if user_input.strip().lower() == target_name.lower():
-                    st.success("Richtig! 🎉")
+                    st.success("Richtig!")
                     st.session_state.correct_count += 1
                 else:
                     st.error(f"Falsch! Richtig wäre: **{target_name}**")
                     st.session_state.wrong_count += 1
 
-                if st.button("Nächstes Molekül ➡️", key=f"next_{idx}"):
+                if st.button("Nächstes Molekül", key=f"next_{idx}"):
                     st.session_state.curr_idx += 1
                     st.rerun()
         else:
-            # Multiple Choice
             all_names = df['Primärname'].dropna().unique().tolist()
             distractors = [n for n in all_names if n != target_name]
             choices = random.sample(distractors, min(3, len(distractors))) + [target_name]
@@ -172,12 +168,12 @@ elif st.session_state.page == "quiz":
             choice = st.radio("Welcher Name passt zum Molekül?", choices, key=f"radio_{idx}")
             if st.button("Antwort prüfen", key=f"btn_mc_{idx}"):
                 if choice == target_name:
-                    st.success("Richtig! 🎉")
+                    st.success("Richtig!")
                     st.session_state.correct_count += 1
                 else:
                     st.error(f"Falsch! Richtig wäre: **{target_name}**")
                     st.session_state.wrong_count += 1
 
-                if st.button("Nächstes Molekül ➡️", key=f"next_mc_{idx}"):
+                if st.button("Nächstes Molekül", key=f"next_mc_{idx}"):
                     st.session_state.curr_idx += 1
                     st.rerun()
