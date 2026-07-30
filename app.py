@@ -58,10 +58,12 @@ if "correct_count" not in st.session_state:
     st.session_state.correct_count = 0
 if "wrong_count" not in st.session_state:
     st.session_state.wrong_count = 0
+if "checked" not in st.session_state:
+    st.session_state.checked = False
 
 # --- HAUPTMENÜ ---
 if st.session_state.page == "menu":
-    st.title("Organische Chemie – Lernapp")
+    st.title("Organische Chemie - Lernapp")
     st.subheader("Wähle deine Verbindungsklassen")
 
     raw_classes = df["Verbindungsklasse"].dropna().unique().tolist()
@@ -81,9 +83,12 @@ if st.session_state.page == "menu":
     for cls_name in available_classes:
         class_checkboxes[cls_name] = st.checkbox(cls_name, value=default_val)
 
-    mode = st.selectbox("Lern-Modus:", [
-        "Auswahl-Modus (Strukturformel -> Name)",
-        "Tastatur-Modus (freies Tippen)"
+    mode = st.selectbox("Lern-Modus wählen:", [
+        "Strukturformel -> Name (Multiple Choice)",
+        "Strukturformel -> Name (Freies Tippen)",
+        "Name -> Strukturformel (Multiple Choice)",
+        "Klassen-Zuordnung (Strukturformel -> Klasse)",
+        "Freies Tippen mit Formel & Klasse"
     ])
 
     if st.button("Lernen starten", type="primary", use_container_width=True):
@@ -114,12 +119,14 @@ if st.session_state.page == "menu":
                 st.session_state.wrong_count = 0
                 st.session_state.mode = mode
                 st.session_state.page = "quiz"
+                st.session_state.checked = False
                 st.rerun()
 
 # --- QUIZ-SEITE ---
 elif st.session_state.page == "quiz":
     if st.button("Zurück zum Hauptmenü"):
         st.session_state.page = "menu"
+        st.session_state.checked = False
         st.rerun()
 
     mols = st.session_state.quiz_mols
@@ -127,53 +134,211 @@ elif st.session_state.page == "quiz":
 
     if idx >= len(mols):
         st.success("Du hast alle Moleküle dieser Runde durchgearbeitet!")
-        st.write(
-            f"**Statistik dieser Sitzung:** Richtig: {st.session_state.correct_count} | Falsch: {st.session_state.wrong_count}")
+        st.write(f"**Statistik:** Richtig: {st.session_state.correct_count} | Falsch: {st.session_state.wrong_count}")
         if st.button("Nochmal von vorne starten"):
             random.shuffle(mols)
             st.session_state.curr_idx = 0
             st.session_state.correct_count = 0
             st.session_state.wrong_count = 0
+            st.session_state.checked = False
             st.rerun()
     else:
         current_mol = mols[idx]
-        st.write(f"**Frage {idx + 1} von {len(mols)}** | Klasse: `{current_mol['class']}`")
+        mode = st.session_state.mode
 
-        mol = Chem.MolFromSmiles(current_mol['smiles'])
-        if mol:
-            img = Draw.MolToImage(mol, size=(400, 250))
-            st.image(img, caption="Strukturformel")
+        st.write(f"**Frage {idx + 1} von {len(mols)}**")
 
-        target_name = current_mol['name']
+        # 1. Modus: Strukturformel -> Name (Multiple Choice)
+        if mode == "Strukturformel -> Name (Multiple Choice)":
+            mol = Chem.MolFromSmiles(current_mol['smiles'])
+            if mol:
+                img = Draw.MolToImage(mol, size=(400, 250))
+                st.image(img, caption="Strukturformel")
 
-        if "freies Tippen" in st.session_state.mode:
-            user_input = st.text_input("Gib den Namen des Moleküls ein:", key=f"input_{idx}")
-            if st.button("Antwort prüfen", key=f"btn_{idx}"):
-                if user_input.strip().lower() == target_name.lower():
-                    st.success("Richtig!")
-                    st.session_state.correct_count += 1
-                else:
-                    st.error(f"Falsch! Richtig wäre: **{target_name}**")
-                    st.session_state.wrong_count += 1
-
-                if st.button("Nächstes Molekül", key=f"next_{idx}"):
-                    st.session_state.curr_idx += 1
-                    st.rerun()
-        else:
+            target_name = current_mol['name']
             all_names = df['Primärname'].dropna().unique().tolist()
             distractors = [n for n in all_names if n != target_name]
             choices = random.sample(distractors, min(3, len(distractors))) + [target_name]
             random.shuffle(choices)
 
             choice = st.radio("Welcher Name passt zum Molekül?", choices, key=f"radio_{idx}")
-            if st.button("Antwort prüfen", key=f"btn_mc_{idx}"):
-                if choice == target_name:
-                    st.success("Richtig!")
-                    st.session_state.correct_count += 1
-                else:
-                    st.error(f"Falsch! Richtig wäre: **{target_name}**")
-                    st.session_state.wrong_count += 1
 
-                if st.button("Nächstes Molekül", key=f"next_mc_{idx}"):
-                    st.session_state.curr_idx += 1
+            if not st.session_state.checked:
+                if st.button("Antwort prüfen"):
+                    st.session_state.checked = True
+                    if choice == target_name:
+                        st.session_state.correct_count += 1
+                        st.session_state.is_last_correct = True
+                    else:
+                        st.session_state.wrong_count += 1
+                        st.session_state.is_last_correct = False
+                        st.session_state.target_name = target_name
                     st.rerun()
+            else:
+                if st.session_state.is_last_correct:
+                    st.success("Richtig!")
+                else:
+                    st.error(f"Falsch! Richtig wäre: **{st.session_state.target_name}**")
+
+                if st.button("Nächstes Molekül"):
+                    st.session_state.curr_idx += 1
+                    st.session_state.checked = False
+                    st.rerun()
+
+        # 2. Modus: Strukturformel -> Name (Freies Tippen)
+        elif mode == "Strukturformel -> Name (Freies Tippen)":
+            mol = Chem.MolFromSmiles(current_mol['smiles'])
+            if mol:
+                img = Draw.MolToImage(mol, size=(400, 250))
+                st.image(img, caption="Strukturformel")
+
+            target_name = current_mol['name']
+            user_input = st.text_input("Gib den Namen des Moleküls ein:", key=f"input_{idx}")
+
+            if not st.session_state.checked:
+                if st.button("Antwort prüfen"):
+                    st.session_state.checked = True
+                    if user_input.strip().lower() == target_name.lower():
+                        st.session_state.correct_count += 1
+                        st.session_state.is_last_correct = True
+                    else:
+                        st.session_state.wrong_count += 1
+                        st.session_state.is_last_correct = False
+                        st.session_state.target_name = target_name
+                    st.rerun()
+            else:
+                if st.session_state.is_last_correct:
+                    st.success("Richtig!")
+                else:
+                    st.error(f"Falsch! Richtig wäre: **{st.session_state.target_name}**")
+
+                if st.button("Nächstes Molekül"):
+                    st.session_state.curr_idx += 1
+                    st.session_state.checked = False
+                    st.rerun()
+
+        # 3. Modus: Name -> Strukturformel (Multiple Choice)
+        elif mode == "Name -> Strukturformel (Multiple Choice)":
+            st.write(Gesucht
+            ist
+            die
+            Strukturformel
+            zu: ** {current_mol['name']} ** ")
+
+            target_smiles = current_mol['smiles']
+            other_mols = [m for m in mols if m['smiles'] != target_smiles]
+            distractor_mols = random.sample(other_mols, min(3, len(other_mols))) if other_mols else []
+            choice_list = distractor_mols + [current_mol]
+            random.shuffle(choice_list)
+
+            choice_options = [Chem.MolFromSmiles(m['smiles']) for m in choice_list]
+
+            # Wir zeigen 4 Bilder zur Auswahl
+            cols = st.columns(2)
+            selected_idx = None
+            for i, mol_obj in enumerate(choice_options):
+                if
+            mol_obj:
+            img = Draw.MolToImage(mol_obj, size=(250, 150))
+            with cols[i % 2]:
+                st.image(img, caption=Seiten - Option
+            {i + 1})
+            if st.button(Option {i+1} wählen, key=f"btn_img_{idx}_{i}"):
+                selected_idx = i
+
+            if not st.session_state.checked and selected_idx is not None:
+                st.session_state.checked = True
+            chosen_mol = choice_list[selected_idx]
+            if chosen_mol['smiles'] == target_smiles:
+                st.session_state.correct_count += 1
+            st.session_state.is_last_correct = True
+            else:
+            st.session_state.wrong_count += 1
+            st.session_state.is_last_correct = False
+            st.rerun()
+
+            if st.session_state.checked:
+                if
+            st.session_state.is_last_correct:
+            st.success("Richtig!")
+            else:
+            st.error("Falsch!")
+
+            if st.button("Nächstes Molekül"):
+                st.session_state.curr_idx += 1
+            st.session_state.checked = False
+            st.rerun()
+
+            # 4. Modus: Klassen-Zuordnung (Strukturformel -> Klasse)
+            elif mode == "Klassen-Zuordnung (Strukturformel -> Klasse)":
+            mol = Chem.MolFromSmiles(current_mol['smiles'])
+            if mol:
+                img = Draw.MolToImage(mol, size=(400, 250))
+            st.image(img, caption="Strukturformel")
+
+            target_class = current_mol['class']
+            raw_classes = df["Verbindungsklasse"].dropna().unique().tolist()
+            all_classes = sorted(list(set([pluralize(c) for c in raw_classes])))
+            distractors = [c for c in all_classes if c != target_class]
+            choices = random.sample(distractors, min(3, len(distractors))) + [target_class]
+            random.shuffle(choices)
+
+            choice = st.radio("Zu welcher Verbindungsklasse gehört dieses Molekül?", choices, key=f"radio_cls_{idx}")
+
+            if not st.session_state.checked:
+                if
+            st.button("Antwort prüfen"):
+            st.session_state.checked = True
+            if choice == target_class:
+                st.session_state.correct_count += 1
+            st.session_state.is_last_correct = True
+            else:
+            st.session_state.wrong_count += 1
+            st.session_state.is_last_correct = False
+            st.session_state.target_class = target_class
+            st.rerun()
+            else:
+            if st.session_state.is_last_correct:
+                st.success("Richtig!")
+            else:
+                st.error(f"Falsch! Richtig wäre: **{st.session_state.target_class}**")
+
+            if st.button("Nächstes Molekül"):
+                st.session_state.curr_idx += 1
+            st.session_state.checked = False
+            st.rerun()
+
+            # 5. Modus: Freies Tippen mit Formel & Klasse
+            elif mode == "Freies Tippen mit Formel & Klasse":
+            mol = Chem.MolFromSmiles(current_mol['smiles'])
+            if mol:
+                img = Draw.MolToImage(mol, size=(400, 250))
+            st.image(img, caption="Strukturformel")
+
+            st.write(f"Verbindungsklasse: **{current_mol['class']}**")
+            target_name = current_mol['name']
+
+            user_input = st.text_input("Gib den Namen des Moleküls ein:", key=f"input_full_{idx}")
+
+            if not st.session_state.checked:
+                if
+            st.button("Antwort prüfen"):
+            st.session_state.checked = True
+            if user_input.strip().lower() == target_name.lower():
+                st.session_state.correct_count += 1
+            st.session_state.is_last_correct = True
+            else:
+            st.session_state.wrong_count += 1
+            st.session_state.is_last_correct = False
+            st.session_state.target_name = target_name
+            st.rerun()
+            else:
+            if st.session_state.is_last_correct:
+                st.success("Richtig!")
+            else:
+                st.error(f"Falsch! Richtig wäre: **{st.session_state.target_name}**")
+
+            if st.button("Nächstes Molekül"):
+                st.session_state.curr_idx += 1
+            st.session_state.checked = False
+            st.rerun()
