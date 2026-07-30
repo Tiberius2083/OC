@@ -1,4 +1,4 @@
 streamlit
 pandas
 openpyxl
-rdkit
+rdkit-pypi
